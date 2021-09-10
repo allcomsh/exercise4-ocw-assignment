@@ -423,6 +423,11 @@ pub mod pallet {
 				}
 			}?;
 
+			// 使用无签名交易带有签名payload的方法，将获取到的Price提交到链上
+			// 理由：
+			// 1）DOT价格信息来源于Coincap公开信息，与某个特定帐户没有特别关联，采用无签名交易可以避免手续费；
+			// 2）对上链数据签名，确保上链的数据能够被验证其来源，因此考虑对采用数据签名。
+
 			// 检索出一个account对PricePayload签名
 			let signer = Signer::<T, T::AuthorityId>::any_account();
 			if let Some((_, res)) = signer.send_unsigned_transaction(
