@@ -395,7 +395,7 @@ pub mod pallet {
 			// 从coincap获取当前DOT的USD报价，并解析为（u64, Permill)元组。
 			let price = Self::fetch_price().map_err(|_| <Error<T>>::HttpFetchingError)?;
 
-			// 利用 PriceInfo 结构，在 ocw 的 local storage 存入。
+			// 利用 PriceInfo 结构，在 ocw 的 local storage 存入价格信息的Vec格式。
 			let price_info: PriceInfo = PriceInfo {
 				price_vec: price.clone(),
 			};
@@ -447,7 +447,7 @@ pub mod pallet {
 
 		/// Fetch current price and return the result in cents.
 		///
-		/// TODO：以后需要逐步加入更多的字符串校验功能
+		/// TODO：以后需要逐步加入更多的Json校验功能、异常捕获等
 		fn fetch_price() -> Result<Vec<u8>, Error<T>> {
 			log::info!("sending request to: {}", HTTP_REMOTE_REQUEST_COINCAP);
 
@@ -458,17 +458,11 @@ pub mod pallet {
 			let timeout = sp_io::offchain::timestamp()
 				.add(rt_offchain::Duration::from_millis(FETCH_TIMEOUT_PERIOD));
 
-			// For github API request, we also need to specify `user-agent` in http request header.
-			//   See: https://developer.github.com/v3/#user-agent-required
 			let pending = request
 				.deadline(timeout) // Setting the timeout time
 				.send() // Sending the request out by the host
 				.map_err(|_| <Error<T>>::HttpFetchingError)?;
 
-			// By default, the http request is async from the runtime perspective. So we are asking the
-			//   runtime to wait here.
-			// The returning value here is a `Result` of `Result`, so we are unwrapping it twice by two `?`
-			//   ref: https://substrate.dev/rustdocs/v2.0.0/sp_runtime/offchain/http/struct.PendingRequest.html#method.try_wait
 			let response = pending.try_wait(timeout)
 				.map_err(|_| <Error<T>>::HttpFetchingError)?
 				.map_err(|_| <Error<T>>::HttpFetchingError)?;
@@ -486,28 +480,22 @@ pub mod pallet {
 				<Error<T>>::NoUTF8Body
 			})?;
 
-			// 利用serde_json取得解析后的Value
-			// body_str = r#"{
-			// 	"data":{
-			// 		"id":"polkadot",
-			// 		-- snip --
-			// 		"priceUsd":"33.2564125398239201",
-			// 		-- snip --
-			// 	},
-			// 	"timestamp":1630857608652
-			// }"#;
-
+			// 利用serde_json取得解析后的Value。
 			let v: serde_json::Value = serde_json::from_str(&body_str).map_err(|_| <Error<T>>::HttpFetchingError)?;
+
 			// 从Value中取得priceUsd字段值，并转为Vec<u8>
 			let price_vec: Vec<u8> = v["data"]["priceUsd"].as_str().unwrap().as_bytes().to_vec();
 
 			Ok(price_vec)
 		}
 
+		/// 传入从coincap上取得的USD价格的字符串，将其解析为整数u64，小数Permill格式
 		fn parse_price(price_str: &str) -> Option<(u64, Permill)> {
 			// expected price_str is: "33.2564125398239201"
+			// 转换为bytes，便于遍历
 			let price = price_str.as_bytes();
 
+			//依据小数点，找到其位置
 			let mut position = 0;
 			for (i, &item) in price.iter().enumerate() {
 				if item == b'.' {
@@ -531,9 +519,10 @@ pub mod pallet {
 			let price_integer: u64 = integer_str.parse().unwrap();
 			let price_fraction = Permill::from_parts(fraction_str.parse().unwrap());
 
+			// 返回Option<(u64, Permill)>结果
 			return Some((price_integer, price_fraction))
 
-			// --- 下列代码使用了外部crates，暂时废止，改用标准库解析price_str
+			// --- 下列代码使用了外部crates，正则表达式。暂时废止，改用runtime库解析price_str
 			/*
 			// 此正则表达式，用于检验从coincap获得的priceUsd字段，并用于捕获整数部分和小数点后6位
 			lazy_static! {
