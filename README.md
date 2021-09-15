@@ -24,6 +24,7 @@ Use Rust's native `cargo` command to build and launch the template node:
 
 ```sh
 cargo run --release -- --dev --tmp
+target/release/ocw-example --dev --tmp --rpc-externa--prometheus-external --ws-external
 ```
 
 ### Build
